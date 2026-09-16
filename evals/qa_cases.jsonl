@@ -1,0 +1,2 @@
+{"case_id":"shitu-s-grade-enumeration","novel_id":"shitu","question":"有哪些S级神话生物？","required_any":[["烛九阴"],["九位","9位"],["旧日集会"]],"forbidden_terms":["时空之眼是S级神话生物","时空之眼：S级神话生物"],"require_valid_citations":true,"min_evidence":1,"notes":"来自 2026-07-25 真实 badcase：避免把烛九阴左眼当成独立S级个体，并收敛到旧日集会九位成员口径。"}
+{"case_id":"shitu-eye-relationship","novel_id":"shitu","question":"时空之眼和烛九阴是什么关系？","required_any":[["烛九阴"],["左眼","眼睛"],["属于","一部分","部件"]],"forbidden_terms":["两个独立的神话生物","彼此无关"],"require_valid_citations":true,"min_evidence":1,"notes":"验证部件/主体边界，不把同一对象拆成两个平级实体。"}

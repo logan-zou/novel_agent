@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "novel-agent"
+version = "0.1.0"
+description = "Evidence-grounded knowledge building and question answering for long-form novels"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
+dependencies = [
+    "openai>=1.0,<3.0",
+]
+
+[project.optional-dependencies]
+observability = [
+    "langfuse>=2.0,<3.0",
+]
+
+[project.scripts]
+novel-agent = "src.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["src", "src.*"]
+
+[tool.setuptools.data-files]
+"share/novel-agent/prompts" = ["prompts/*.md"]
+"share/novel-agent/evals" = ["evals/*.jsonl"]
