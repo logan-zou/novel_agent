@@ -19,9 +19,22 @@ class CorpusStore:
             target = self.chapters_dir / f"{int(chapter['chapter_no'])}.txt"
             if not target.exists():
                 target.write_text(
-                    f"【第{chapter['chapter_no']}章 {chapter['title']}】\n\n{chapter['text']}",
+                    _chapter_document(chapter),
                     encoding="utf-8",
                 )
+
+    def validate_chapters(self, chapters: list[dict]) -> None:
+        """只读、完整比对保存的证据章节，拒绝缺章、额外章节或任何内容变化。"""
+        expected = {f"{int(chapter['chapter_no'])}.txt": chapter for chapter in chapters}
+        if len(expected) != len(chapters):
+            raise ValueError("解析结果存在重复章号")
+        saved_names = {path.name for path in self.chapters_dir.glob("*.txt")}
+        if saved_names != set(expected):
+            raise ValueError("保存的章号集合不完整或与当前原文不同")
+        for name, chapter in expected.items():
+            saved = (self.chapters_dir / name).read_text(encoding="utf-8")
+            if saved != _chapter_document(chapter):
+                raise ValueError(f"第 {int(chapter['chapter_no'])} 章的标题或正文不一致")
 
     def chapter_numbers(self) -> list[int]:
         if not self.chapters_dir.exists():
@@ -110,3 +123,7 @@ class CorpusStore:
             "total_matches": len(found),
         }
         return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _chapter_document(chapter: dict) -> str:
+    return f"【第{chapter['chapter_no']}章 {chapter['title']}】\n\n{chapter['text']}"

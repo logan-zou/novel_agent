@@ -4,12 +4,14 @@
 """
 
 import argparse
+import hashlib
 import json
 import sys
 import time
 from pathlib import Path
 
 from src.config import DEFAULT_MIN_WINDOW_CHARS, DEFAULT_WINDOW_CHARS, KNOWLEDGE_BASE_DIR
+from src.build_status import report_status
 from src.extraction_agent import run_extraction_agent
 from src.novel.corpus import CorpusStore
 from src.preprocess import make_batches, split_chapters
@@ -20,8 +22,8 @@ from src.usage_tracker import accumulate_usage, empty_usage, query, summarize
 def _format_usage(usage: dict) -> str:
     """把 token 用量格式化为包含缓存拆分的终端摘要。"""
     parts = [
-        f"非缓存读 {usage.get('uncached_prompt_tokens', 0):,}",
-        f"缓存读 {usage.get('cached_prompt_tokens', 0):,}",
+        f"非缓存读（估算） {usage.get('uncached_prompt_tokens', 0):,}",
+        f"缓存读（估算） {usage.get('cached_prompt_tokens', 0):,}",
     ]
     unknown = usage.get("unknown_cache_prompt_tokens", 0)
     if unknown:
@@ -40,19 +42,10 @@ def main(argv: list[str] | None = None) -> None:
 
     novel_id = args.novel_id or txt_path.stem
     kb_dir = Path(KNOWLEDGE_BASE_DIR) / novel_id
-    kb_dir.mkdir(parents=True, exist_ok=True)
     progress_path = kb_dir / "progress.json"
 
     # ── 读取或初始化进度 ─────────────────────────────────────────────────────
     progress, completed = _load_progress(progress_path)
-
-    is_really_complete = _is_progress_complete(progress, completed)
-    if is_really_complete:
-        print(f"✅ 《{novel_id}》的知识库已构建完成。")
-        print(f"   如需重建，请删除：{progress_path}")
-        return
-    if progress.get("status") == "completed":
-        print("⚠️  进度曾被标记为 completed，但批次数不完整，将继续构建。")
 
     # ── 预处理 ───────────────────────────────────────────────────────────────
     print(f"\n📚 《{txt_path.stem}》—— 开始构建知识库")
@@ -63,9 +56,8 @@ def main(argv: list[str] | None = None) -> None:
     chapters = split_chapters(str(txt_path))
     print(f"\r📖 章节划分完成，共 {len(chapters)} 章")
 
-    CorpusStore(kb_dir).save_chapters(chapters)
-
     try:
+        source_fingerprint = _validate_source_identity(kb_dir, chapters, progress)
         batches, batching = _resolve_batches(
             chapters,
             progress,
@@ -76,6 +68,23 @@ def main(argv: list[str] | None = None) -> None:
     except ValueError as error:
         print(f"[错误] 无法安全恢复批次：{error}", file=sys.stderr)
         sys.exit(1)
+
+    is_really_complete = _is_progress_complete(progress, completed)
+    if is_really_complete:
+        if "source_fingerprint" not in progress:
+            progress["source_fingerprint"] = source_fingerprint
+            _save_progress(progress_path, progress)
+        report_status("已完成，跳过", completed=len(completed), total=progress["total_batches"])
+        print(f"✅ 《{novel_id}》的知识库已构建完成。")
+        print("   如需重新构建，请使用新的 novel_id")
+        return
+    if progress.get("status") == "completed":
+        print("⚠️  进度曾被标记为 completed，但批次数不完整，将继续构建。")
+
+    # 原文身份与批次计划全部通过后，才允许写入章节或恢复进度。
+    report_status("正在预处理")
+    kb_dir.mkdir(parents=True, exist_ok=True)
+    CorpusStore(kb_dir).save_chapters(chapters)
     total_batches = len(batches)
     total_chapters = len(chapters)
     if batching["strategy"] == "progressive":
@@ -98,6 +107,7 @@ def main(argv: list[str] | None = None) -> None:
         "total_batches": total_batches,
         "window_chars": batching["start_window_chars"],
         "source_chars": sum(len(chapter["text"]) for chapter in chapters),
+        "source_fingerprint": source_fingerprint,
         "batching": batching,
         "completed_batches": list(completed),
         "status": "in_progress",
@@ -127,6 +137,8 @@ def main(argv: list[str] | None = None) -> None:
 
         print(f"⏳ {label}  处理中...", end="", flush=True)
         batch_start = time.time()
+        report_status("处理中", completed=len(completed), total=total_batches,
+                      batch=batch_no + 1, chapters=f"{ch_start}-{ch_end}")
 
         try:
             batch_usage = _run_batch_with_recovery(
@@ -138,6 +150,8 @@ def main(argv: list[str] | None = None) -> None:
                 progress_path=progress_path,
             )
         except Exception as e:
+            report_status("批次失败", completed=len(completed), total=total_batches,
+                          batch=batch_no + 1, chapters=f"{ch_start}-{ch_end}")
             print(f"\n[错误] {label} 处理失败：{e}", file=sys.stderr)
             print("进度已保存，修复问题后重新运行可从此处续跑。", file=sys.stderr)
             sys.exit(1)
@@ -153,6 +167,8 @@ def main(argv: list[str] | None = None) -> None:
         progress["completed_batches"] = sorted(completed)
         _save_progress(progress_path, progress)
 
+        report_status("批次完成", completed=len(completed), total=total_batches)
+
     # 测试上限或中途停止不等于整本完成。只有每一个批次都有完成记录，
     # 才允许把状态置为 completed。
     if completed != set(range(total_batches)):
@@ -160,6 +176,7 @@ def main(argv: list[str] | None = None) -> None:
         progress["completed_batches"] = sorted(completed)
         _save_progress(progress_path, progress)
         print(f"\n⏸️  本次处理结束：已完成 {len(completed)}/{total_batches} 批，可继续断点续跑。")
+        report_status("达到本次上限，可续跑", completed=len(completed), total=total_batches)
         return
 
     # ── 完成 ─────────────────────────────────────────────────────────────────
@@ -168,6 +185,7 @@ def main(argv: list[str] | None = None) -> None:
 
     progress["status"] = "completed"
     _save_progress(progress_path, progress)
+    report_status("整本完成", completed=len(completed), total=total_batches)
 
     # token 用量从持久化记录里查全量汇总，不只是本次运行——断点续跑时
     # 之前几次运行也应该算进这本小说知识库的总花费
@@ -183,6 +201,35 @@ def main(argv: list[str] | None = None) -> None:
 
 
 # ── 进度文件读写 ─────────────────────────────────────────────────────────────
+
+def _source_fingerprint(chapters: list[dict]) -> dict:
+    """只对解析后的章号、标题和正文做指纹，不依赖文件路径或编码。"""
+    payload = [
+        [int(chapter["chapter_no"]), chapter["title"], chapter["text"]]
+        for chapter in chapters
+    ]
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return {"version": 1, "sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def _validate_source_identity(kb_dir: Path, chapters: list[dict], progress: dict) -> dict:
+    """恢复前只读核验输入及证据原文；旧库必须能逐章证明同一来源。"""
+    if not chapters:
+        raise ValueError("原文没有可构建的章节")
+    fingerprint = _source_fingerprint(chapters)
+    if "source_fingerprint" in progress and progress["source_fingerprint"] != fingerprint:
+        raise ValueError("原文章号、标题或正文已变化；请恢复原文件或使用新的 novel_id")
+
+    if progress or (kb_dir.exists() and any(kb_dir.iterdir())):
+        try:
+            CorpusStore(kb_dir).validate_chapters(chapters)
+        except (OSError, UnicodeError, ValueError) as error:
+            raise ValueError(
+                f"无法确认当前原文与已保存章节完全一致：{error}；"
+                "请恢复原文件及章节副本，或使用新的 novel_id"
+            ) from error
+    return fingerprint
+
 
 def _load_progress(progress_path: Path) -> tuple[dict, set]:
     if progress_path.exists():

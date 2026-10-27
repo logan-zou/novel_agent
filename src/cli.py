@@ -33,6 +33,10 @@ def main(argv: list[str] | None = None) -> None:
             if not any(option in rest for option in {"-h", "--help"}):
                 _require_runtime_config(EXTRACTION_MODEL, "EXTRACTION_MODEL")
             build_main(rest)
+        elif command == "build-many":
+            from src.build_many import main as build_many_main
+
+            build_many_main(rest)
         elif command == "ask":
             _ask(rest)
         elif command == "evaluate":
@@ -131,6 +135,7 @@ def _help_text() -> str:
 命令：
   config     检查 LLM 和数据目录配置
   build      从小说 TXT 构建知识库
+  build-many 并发构建多本小说知识库
   ask        对已构建的知识库提问
   evaluate   运行固定问答评测
 

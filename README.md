@@ -1,54 +1,55 @@
 # Novel Agent
 
-Novel Agent 是面向长篇小说的知识构建与证据化事实问答核心。它先把章节原文压缩成可检索的角色、设定、事件与故事弧，再在回答时用知识库定位线索、回到章节原文核验，最终给出带原文证据的回答。
+Novel Agent 面向长篇小说的知识构建与事实问答。它将章节内容整理为可检索的角色、设定、事件与故事弧，回答时用知识库定位线索，再回原文核验并给出引用。
 
-核心仓库只包含小说业务逻辑、最小 Agent Harness、命令行工具和评测；多小说体验、登录、配额与 Web 部署位于独立的 `novel_agent_example` 仓库。
+本仓库提供小说业务核心、最小 Agent Runtime、命令行、测试和原创样例，通过克隆源码安装。
+Web 服务、登录、配额和部署由调用方独立实现；当前公开入口以本仓库 CLI 为准。
 
-## 为什么不是普通 RAG
+## 核心设计
 
-长篇小说会同时遇到三个问题：事件跨越多个文本块、虚构世界的词义不适合直接依赖通用向量相似度、后期揭示可能推翻前期人物猜测。Novel Agent 的核心设计是：
-
-- **知识库负责定位，原文负责裁决**：结构化知识用于快速找到人物和事件，关键结论必须回章节原文验证。
-- **一实体一文件**：角色、设定、事件和故事弧以 Markdown 独立存储，并由 `catalog.jsonl` 提供名称、别名和摘要索引。
-- **渐进式知识构建**：按章节批次持续抽取；随着全书进度缩小批次，控制知识增长后的检索与合并复杂度。
-- **有依据的回答**：原文搜索产生运行内 Evidence ID，答案通过 `[[cite:EVxxx]]` 内联引用，输出前校验证据和章节归属。
-- **面向长任务的轻量 Harness**：统一处理工具循环、非法参数重试、上下文裁剪、截断恢复、迭代边界和 token 统计。
-- **安全提交与断点续跑**：抽取结果先在批次会话中暂存并校验，通过后统一提交；失败批次可以自动拆分并继续。
-
-## 架构
+- **知识库定位，原文核验**：关键结论回到章节原文，处理后期揭秘、身份变化和主体/部件关系。
+- **一实体一文件**：Markdown 保存知识，`catalog.jsonl` 索引名称、别名和摘要，准确名称优先检索。
+- **渐进构建**：按章节批次持续抽取，随全书进度缩小窗口，支持批次断点续跑和失败拆批。
+- **校验后提交**：实体先在批内暂存，检查元数据、链接和失败请求后统一提交；原文指纹防止续跑混用不同版本。
+- **原文引用**：搜索结果生成 Evidence ID，答案使用 `[[cite:EVxxx]]`，校验引用来源与章节归属。
+- **轻量 Runtime**：统一处理模型与工具循环、参数重试、上下文裁剪、截断恢复和运行预算。
 
 ```text
 CLI / 调用方
-      │
-      ▼
-小说业务层 src/novel
-  ├─ Builder：章节 → 实体知识
-  ├─ QA：知识定位 → 原文核验 → 证据回答
-  ├─ CorpusStore：章节原文与全文搜索
-  └─ KnowledgeStore：实体、Catalog 与安全提交
-      │
-      ▼
-Agent Harness src/harness
-  ├─ 模型与工具循环
-  ├─ 重试、裁剪与输出校验
-  └─ Token 用量归一化
-      │
-      ▼
+    ↓
+src/novel：构建 → 实体知识；问答 → 原文证据
+    ↓
+src/harness：工具循环、预算、恢复与用量
+    ↓
 OpenAI-compatible Chat Completions API
 ```
 
-Harness 不依赖小说领域、具体模型或观测平台，这一边界由 `tests/test_architecture_boundaries.py` 自动检查。更详细的业务设计见 [`docs/DESIGN.md`](docs/DESIGN.md)，Harness 说明见 [`docs/HARNESS_ARCHITECTURE.md`](docs/HARNESS_ARCHITECTURE.md)。
+[业务设计](docs/DESIGN.md) · [Runtime 边界](docs/HARNESS_ARCHITECTURE.md) · [构建与故障恢复](docs/BUILDING.md)
 
-## 快速开始
+## 从源码开始
 
-运行环境要求 Python 3.11 或更高版本。小说原文和构建后的知识库不会进入 Git，`novels/` 与 `knowledge_base/` 已加入 `.gitignore`。
-
-### 1. 安装
+需要 Python 3.11+。下列命令适用于 macOS/Linux，在仓库目录运行：
 
 ```bash
+git clone https://github.com/logan-zou/novel_agent.git
+cd novel_agent
 python3 -m venv .venv
 .venv/bin/pip install -e .
 ```
+
+### 1. 先做无模型检查
+
+仓库附带原创短篇《雾港守灯簿》及人工参考答案，无需下载商业小说或配置密钥：
+
+```bash
+./novel-agent --help
+./novel-agent evaluate --dataset examples/mist_harbor/qa_cases.jsonl
+./novel-agent evaluate --dataset examples/mist_harbor/qa_cases.jsonl --responses examples/mist_harbor/reference_responses.jsonl
+bash build_many.sh
+```
+
+这些命令不调用模型。参考答案用于检查评测流程，不能作为模型准确率成绩。
+`build_many.sh` 默认只预览任务；[样例说明](examples/mist_harbor/README.md) 提供原文、逐题依据和完整实验步骤。
 
 ### 2. 配置模型
 
@@ -56,7 +57,7 @@ python3 -m venv .venv
 cp .env.example .env
 ```
 
-至少填写三个配置：
+填写实际服务地址、密钥和模型名：
 
 ```dotenv
 LLM_BASE_URL=https://api.openai.com/v1
@@ -64,110 +65,109 @@ LLM_API_KEY=your-api-key
 LLM_MODEL=your-model
 ```
 
-任何实现 OpenAI Chat Completions 流式接口和 tool calling 的服务都可以接入。配置完成后可以检查生效结果；命令不会输出 API Key：
+模型服务需支持流式 Chat Completions、tool calling 和 usage 返回。
+协议兼容程度和抽取效果取决于服务及模型；请按实际模型设置上下文、输出容量，先跑小样例验证。
+推理扩展参数默认关闭，仅在服务商明确支持时开启。
 
 ```bash
 ./novel-agent config
 ```
 
-### 3. 构建知识库
+配置检查只显示密钥是否存在，不输出密钥。`.env` 与数据目录已被 Git 忽略。
+
+### 3. 构建并提问
+
+以下命令会调用模型并产生服务商费用：
 
 ```bash
-./novel-agent build /path/to/novel.txt example_novel
+./novel-agent build examples/mist_harbor/mist_harbor.txt mist_harbor --max-batches 1
+./novel-agent ask mist_harbor "碎星镜和鸣潮灯是什么关系？" --json
 ```
 
-输入为小说 TXT。程序会自动探测 UTF-8、GB18030 等常见编码并划分章节，结果默认写入 `knowledge_base/example_novel/`。构建会产生模型费用；可以先只处理一个批次验证配置：
+输出默认保存在 `knowledge_base/mist_harbor/`。示例原文很短，默认窗口可在一个批次内处理完。
+自己的小说可以用同样方式先试一个批次；去掉 `--max-batches 1` 后执行完整构建。
+
+重新运行相同命令会从已提交批次续跑。章号、标题、正文指纹和已保存章节必须一致；
+修订原文请使用新的 `novel_id`。旧进度仅在已存章节完整匹配时迁移，原文不匹配时停止且保留原库。
+TXT 输入支持 UTF-8、GB18030 等常见编码。
+
+`ask --json` 返回回答、证据、引用校验和用量。`--show-reasoning` 可显示服务返回的 `reasoning_content`，该字段是可选能力。
+
+### 4. 跑真实问答评测
+
+完成样例知识库构建后，可对同一组问题运行模型评测并保存报告：
 
 ```bash
-./novel-agent build /path/to/novel.txt example_novel --max-batches 1
+./novel-agent evaluate --dataset examples/mist_harbor/qa_cases.jsonl --live --output knowledge_base/mist_harbor/evaluation.json
 ```
 
-重新执行同一命令会从已保存进度继续。
+真实评测会产生模型费用；全部选中案例先检查知识库和章节是否可用。
+默认 `evaluate` 只校验数据格式；传 `--responses` 评分已有回答，任何案例不通过时退出码非零。
 
-### 4. 提问
+## 批量构建
 
 ```bash
-./novel-agent ask example_novel "主角为什么离开故乡？"
+# 只预览输入和输出，不调用模型或创建日志
+./novel-agent build-many ./novels --dry-run
+
+# 实际试跑：同时一本，每本最多一个批次
+./novel-agent build-many ./novels --workers 1 --max-batches 1
+
+# 使用脚本顶部的输入列表；默认只预览，显式 --run 才实际构建
+bash build_many.sh --run
 ```
 
-如果模型服务返回 `reasoning_content`，可以选择实时展示：
-
-```bash
-./novel-agent ask example_novel "主角为什么离开故乡？" --show-reasoning
-```
-
-需要程序化消费完整回答、证据、引用校验和 token 用量时，增加 `--json`。
+脚本默认使用原创样例、1 路并发、1 批上限，关闭调试。完整运行可修改输入列表并用 `--run --max-batches 0`。
+实际运行日志和汇总位于 `knowledge_base/_build_logs/`。同一本知识库应仅由一个进程写入。
+批次上限下的成功仅表示本次运行成功，整本完成以 `progress.json` 为准。
+更多并发、日志和修复规则见 [构建与故障恢复](docs/BUILDING.md)。
 
 ## 模型配置
 
-| 配置 | 必填 | 说明 |
-|---|---:|---|
-| `LLM_BASE_URL` | 是 | OpenAI-compatible `/v1` 地址；默认是 OpenAI 官方地址 |
-| `LLM_API_KEY` | 是 | API Key，只保存在本地 `.env` |
-| `LLM_MODEL` | 是* | 构建和问答共用的模型名 |
-| `EXTRACTION_MODEL` | 否 | 单独指定知识抽取模型，会覆盖 `LLM_MODEL` |
-| `QA_MODEL` | 否 | 单独指定问答模型，会覆盖 `LLM_MODEL` |
-| `LLM_INCLUDE_REASONING_EFFORT` | 否 | 向兼容服务发送 `reasoning_effort`，默认关闭 |
-| `LLM_ENABLE_THINKING` | 否 | 发送兼容服务的 thinking 扩展参数，默认关闭 |
-| `MODEL_CONTEXT_TOKENS` | 否 | 模型上下文上限，用于 Harness 主动裁剪 |
-| `MODEL_MAX_OUTPUT_TOKENS` | 否 | 单次模型调用最大输出 |
-| `KNOWLEDGE_BASE_DIR` | 否 | 知识库根目录 |
+| 配置 | 说明 |
+|---|---|
+| `LLM_BASE_URL` | Chat Completions `/v1` 地址，默认 `https://api.openai.com/v1` |
+| `LLM_API_KEY` | 模型服务密钥，保存在本地 `.env` 或环境变量 |
+| `LLM_MODEL` | 构建和问答共用的模型名；也可分别指定下面两个模型 |
+| `EXTRACTION_MODEL` / `QA_MODEL` | 覆盖对应任务的模型名 |
+| `MODEL_CONTEXT_TOKENS` | 模型上下文容量，用于主动裁剪 |
+| `MODEL_MAX_OUTPUT_TOKENS` | 单次调用最大输出，需按模型配置 |
+| `MODEL_TEMPERATURE` | 请求温度，默认 0.5，需确认模型支持 |
+| `LLM_INCLUDE_REASONING_EFFORT` | 是否发送 `reasoning_effort`，默认关闭 |
+| `LLM_ENABLE_THINKING` | 是否发送 thinking 扩展，默认关闭 |
+| `LLM_STREAM_MAX_RETRIES` | 网络/流式中断后的额外重试次数，默认 5，0 关闭 |
+| `KNOWLEDGE_BASE_DIR` | 知识库根目录，默认源码仓库内 `knowledge_base/` |
 
-\* 如果分别配置了 `EXTRACTION_MODEL` 和 `QA_MODEL`，可以不设置 `LLM_MODEL`。扩展推理参数并非 OpenAI-compatible 协议的统一能力，只有服务商明确支持时才应开启；`reasoning_content` 不参与业务正确性判断。
+环境变量优先于 `.env`。配置模板见 [.env.example](.env.example)。
+核心运行依赖只有 `openai`，完整声明在 [pyproject.toml](pyproject.toml)；安装使用本地源码，不需要 PyPI 发布包。
+可选观测使用 `.venv/bin/pip install -e '.[observability]'`。
 
-## 命令
+## 效果与费用的边界
 
-```text
-novel-agent config     检查公开配置
-novel-agent build      构建或续跑知识库
-novel-agent ask        对已构建的小说提问
-novel-agent evaluate   校验或运行固定评测集
-```
+公开样例覆盖事实、别名、部件关系、后期反转、枚举和信息不足；另保留两条历史小说 badcase。
+评分检查关键词、禁词、预期章节和引用状态。引用有效只证明证据确实读取过，不自动证明每个结论都被证据支持。
+人工参考答案的通过率不能代表模型质量；真实效果需记录所用模型、配置、版本、输入输出 token 和时长。
 
-安装项目后可以直接使用 `novel-agent`；在仓库中也可以使用零额外配置的 `./novel-agent` 启动脚本。原有 `./build.sh` 继续兼容。
+输入/输出 token 来自服务返回的 usage。显示的缓存拆分是按 Agent 请求前缀长度的**估算**，
+不代表服务商实际缓存命中或计费；失败流缺失的 usage 也无法计入本地记录。费用以服务商记录为准。
+详细规则和真实评测步骤见 [评测说明](evals/README.md)。
 
-## 依赖
+## 数据与隐私
 
-核心依赖有且只有：
+`novels/` 和 `knowledge_base/` 默认仅在本地保存，不提交 Git。`examples/mist_harbor/` 是可随源码分发的原创示例，采用本仓库 Apache-2.0 许可。
+使用者需有权处理自己的输入文本，商业小说原文和生产知识库不随仓库提供。
 
-| 依赖 | 版本 | 用途 |
-|---|---|---|
-| Python | `>=3.11` | 运行环境 |
-| `openai` | `>=1.0,<3.0` | 调用 OpenAI-compatible Chat Completions API |
+构建和问答会把相关原文、知识及问题发送到配置的模型服务。
+显式配置 Langfuse 后，问题、回答和运行元数据也会发送到指定观测服务。
+开启 `--debug` 会在本地日志保存模型输出及工具内容，分享日志前请删去私有内容和凭证。
 
-项目使用 `setuptools>=68` 作为构建后端，由 `pip` 根据 `pyproject.toml` 自动安装，不属于运行时依赖。
-
-Langfuse 只用于可选观测，不是业务运行条件：
-
-```bash
-.venv/bin/pip install -e '.[observability]'
-```
-
-依赖和命令行入口的权威声明位于 [`pyproject.toml`](pyproject.toml)；[`requirements.txt`](requirements.txt) 保留给传统安装流程，可选观测依赖位于 [`requirements-observability.txt`](requirements-observability.txt)。测试使用 Python 标准库 `unittest`，不引入额外测试框架。
-
-## 测试与评测
-
-完整单元测试不会调用真实模型：
+## 开发与许可
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-评测集默认只做离线格式校验。增加 `--live` 才会调用模型并产生费用：
+离线测试和 CI 不需要模型密钥。开发流程见 [CONTRIBUTING.md](CONTRIBUTING.md)，
+安全报告与集成边界见 [SECURITY.md](SECURITY.md)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-```bash
-./novel-agent evaluate
-./novel-agent evaluate --live --case-id your_case_id
-```
-
-## 数据与示例服务边界
-
-- `novels/`：小说原文，仅本地使用，不提交 Git。
-- `knowledge_base/`：章节副本、实体知识、构建进度和用量记录，不提交 Git。
-- `../novel_agent_example`：独立 Web 示例服务，负责多小说选择、GitHub 登录、体验配额和部署。
-
-本仓库不附带小说原文或预构建知识库。使用者需要对输入内容拥有合法使用权。
-
-## License
-
-本项目采用 [Apache License 2.0](LICENSE)。小说原文、预构建知识库以及独立示例服务中的数据不属于本仓库许可范围。
+本项目采用 [Apache License 2.0](LICENSE)。用户自备小说、生成的知识库和外部服务数据的权利由其来源决定。

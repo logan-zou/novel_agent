@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -58,6 +59,25 @@ class BuildProgressTests(unittest.TestCase):
         self.assertEqual(calls, [1, 2])
         self.assertEqual(progress["completed_batches"], [0, 1])
         self.assertEqual(progress["status"], "in_progress")
+
+    def test_batch_limit_reports_partial_progress_to_launcher(self):
+        chapters = [{"chapter_no": n, "title": str(n), "text": "正文"} for n in (1, 2)]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            novel = root / "book.txt"
+            novel.write_text("正文", encoding="utf-8")
+            status = root / "status.json"
+            with (
+                patch.dict(os.environ, {"NOVEL_BUILD_STATUS_FILE": str(status)}),
+                patch("src.build.KNOWLEDGE_BASE_DIR", root / "kb"),
+                patch("src.build.split_chapters", return_value=chapters),
+                patch("src.build.make_batches", return_value=[[c] for c in chapters]),
+                patch("src.build.run_extraction_agent", return_value=empty_usage()),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                main([str(novel), "--max-batches", "1"])
+            snapshot = json.loads(status.read_text())
+        self.assertEqual(snapshot, {"stage": "达到本次上限，可续跑", "completed": 1, "total": 2})
 
     def test_old_progress_keeps_completed_prefix_and_replans_only_tail(self):
         chapters = [

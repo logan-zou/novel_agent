@@ -1,7 +1,7 @@
 """
 Token 用量记录：所有 LLM 调用统一记录到 knowledge_base/{novel_id}/token_usage.jsonl，
 一行一次真实的 API 调用，供事后查询。新运行的缓存归属由 Runtime 按 Agent loop
-稳定前缀计算，不采用 API 缓存明细；历史记录仍兼容缓存归属未知字段。抽取 Agent 以"批次"为 label 分组，
+稳定前缀估算，不代表服务商实际命中或计费；历史记录仍兼容缓存归属未知字段。抽取 Agent 以"批次"为 label 分组，
 问答 Agent 以"单次问答"为 label 分组，同一 label 下累加即为该批次/该次问答的
 总消耗——这是问答页面和构建终端展示的数字的来源。
 
@@ -124,10 +124,11 @@ if __name__ == "__main__":
         s = summarize(records)
         scope = args.novel_id or "全部小说"
         print(f"用量汇总（{scope}）")
+        print("  缓存拆分为 Agent 前缀估算，不代表服务商命中或账单；历史记录可能使用旧口径。")
         print(f"  调用次数：{s['total']['calls']}")
         print(f"  输入 tokens：{s['total']['prompt_tokens']:,}")
-        print(f"    非缓存读：{s['total']['uncached_prompt_tokens']:,}")
-        print(f"    缓存读：{s['total']['cached_prompt_tokens']:,}")
+        print(f"    估算非缓存读：{s['total']['uncached_prompt_tokens']:,}")
+        print(f"    估算缓存读：{s['total']['cached_prompt_tokens']:,}")
         if s["total"]["unknown_cache_prompt_tokens"]:
             print(f"    缓存归属未知（历史记录）：{s['total']['unknown_cache_prompt_tokens']:,}")
         print(f"  输出 tokens：{s['total']['completion_tokens']:,}")
@@ -137,8 +138,8 @@ if __name__ == "__main__":
         for agent, b in sorted(s["by_agent"].items()):
             print(
                 f"  {agent:12s}  {b['calls']:5d} 次调用  "
-                f"非缓存 {b['uncached_prompt_tokens']:>10,}  "
-                f"缓存 {b['cached_prompt_tokens']:>10,}  "
+                f"估算非缓存 {b['uncached_prompt_tokens']:>10,}  "
+                f"估算缓存 {b['cached_prompt_tokens']:>10,}  "
                 f"未知 {b['unknown_cache_prompt_tokens']:>10,}  "
                 f"输出 {b['completion_tokens']:>10,}  "
                 f"合计 {b['total_tokens']:>12,}"
@@ -150,8 +151,8 @@ if __name__ == "__main__":
             for label, b in sorted(s["by_label"].items(), key=lambda kv: kv[1]["total_tokens"], reverse=True):
                 print(
                     f"  {label:30s}  {b['calls']:3d} 次调用  "
-                    f"非缓存 {b['uncached_prompt_tokens']:>10,}  "
-                    f"缓存 {b['cached_prompt_tokens']:>10,}  "
+                    f"估算非缓存 {b['uncached_prompt_tokens']:>10,}  "
+                    f"估算缓存 {b['cached_prompt_tokens']:>10,}  "
                     f"未知 {b['unknown_cache_prompt_tokens']:>10,}  "
                     f"输出 {b['completion_tokens']:>10,}  "
                     f"合计 {b['total_tokens']:>12,}"

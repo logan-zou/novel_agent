@@ -1,0 +1,70 @@
+name: Offline checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  source-install:
+    name: Source install / Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    env:
+      LLM_API_KEY: ""
+      LLM_MODEL: ""
+      EXTRACTION_MODEL: ""
+      QA_MODEL: ""
+      LLM_BASE_URL: http://127.0.0.1:9/v1
+      LLM_STREAM_MAX_RETRIES: "0"
+      LANGFUSE_PUBLIC_KEY: ""
+      LANGFUSE_SECRET_KEY: ""
+      KNOWLEDGE_BASE_DIR: ${{ runner.temp }}/novel-agent-knowledge
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Check that private runtime files are not tracked
+        run: |
+          python - <<'PY'
+          import subprocess
+          from pathlib import PurePosixPath
+
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          forbidden = []
+          for name in filter(None, tracked):
+              path = PurePosixPath(name)
+              private_env = (path.name == ".env" or path.name.startswith(".env.")) and path.name != ".env.example"
+              private_data = path.parts[0] in {"novels", "knowledge_base"}
+              if private_env or private_data:
+                  forbidden.append(name)
+          if forbidden:
+              raise SystemExit("Private runtime files must not be tracked:\n" + "\n".join(forbidden))
+          PY
+      - name: Install source and public dependencies
+        run: python -m pip install -e .
+      - name: Run offline unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Check installed CLI and default dataset
+        run: |
+          novel-agent --help
+          novel-agent evaluate
+      - name: Preview the default build without model credentials or data writes
+        run: |
+          bash build_many.sh
+          test ! -e "$KNOWLEDGE_BASE_DIR"
+      - name: Score hand-written reference responses (scorer fixture, no live model)
+        run: >-
+          novel-agent evaluate
+          --dataset examples/mist_harbor/qa_cases.jsonl
+          --responses examples/mist_harbor/reference_responses.jsonl
+          --output "$RUNNER_TEMP/reference-scoring.json"

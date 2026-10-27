@@ -14,7 +14,8 @@ def qa_tools(
     return [
         Tool(
             "search_entities",
-            "按名称、别名和摘要搜索角色、设定、事件或故事弧；这是定位工具，不是回答证据。",
+            "按名称、别名和摘要搜索，精确名称和别名优先；这是定位工具，不是回答证据。"
+            "结果为整次查询的限量候选，查看截断和逐词覆盖反馈；仅对未覆盖词缩小查询，先读取已有主体。",
             {
                 "type": "object",
                 "properties": {
@@ -23,7 +24,7 @@ def qa_tools(
                         "type": "array",
                         "items": {"type": "string", "enum": ["character", "setting", "event", "arc"]},
                     },
-                    "limit": {"type": "integer", "default": 30},
+                    "limit": {"type": "integer", "default": 30, "minimum": 1, "maximum": 100},
                 },
                 "required": ["keywords"],
             },

@@ -96,6 +96,7 @@ MODEL_CONTEXT_TOKENS = _env_int("MODEL_CONTEXT_TOKENS", 200_000)
 # 不同兼容服务对扩展推理参数的支持不同，因此默认不发送。
 LLM_INCLUDE_REASONING_EFFORT = _env_bool("LLM_INCLUDE_REASONING_EFFORT")
 LLM_ENABLE_THINKING = _env_bool("LLM_ENABLE_THINKING")
+LLM_STREAM_MAX_RETRIES = _env_int("LLM_STREAM_MAX_RETRIES", 5)
 
 # ── 提示词文件路径 ───────────────────────────────────────
 _source_prompts_dir = PROJECT_ROOT / "prompts"

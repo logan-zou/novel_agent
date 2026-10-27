@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from openai import OpenAI
+import logging
+import time
+
+import httpx
+from openai import APIConnectionError, APIStatusError, OpenAI
 
 from src.config import (
     ConfigurationError,
@@ -10,8 +14,29 @@ from src.config import (
     LLM_BASE_URL,
     LLM_ENABLE_THINKING,
     LLM_INCLUDE_REASONING_EFFORT,
+    LLM_STREAM_MAX_RETRIES,
 )
 from src.harness.runtime import AssistantMessage, ChatProvider, ModelRequest, ModelResponse, ToolCall
+
+
+logger = logging.getLogger(__name__)
+
+
+class _StreamTransportError(Exception):
+    """只标识读取流时的传输错误，避免重试回调中的业务异常。"""
+
+
+def _stream_chunks(stream):
+    iterator = iter(stream)
+    while True:
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            return
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError,
+                APIConnectionError, TimeoutError, ConnectionError) as error:
+            raise _StreamTransportError() from error
+        yield chunk
 
 
 class OpenAICompatibleProvider:
@@ -30,8 +55,14 @@ class OpenAICompatibleProvider:
         include_reasoning_effort: bool = False,
         enable_thinking: bool = False,
         extra_body: dict | None = None,
+        stream_max_retries: int = 5,
     ) -> None:
-        self.client = client or OpenAI(api_key=api_key, base_url=base_url)
+        if stream_max_retries < 0:
+            raise ConfigurationError("LLM_STREAM_MAX_RETRIES 不能小于 0")
+        self.stream_max_retries = stream_max_retries
+        self.client = (client.with_options(max_retries=0) if isinstance(client, OpenAI) else client) or OpenAI(
+            api_key=api_key, base_url=base_url, max_retries=0
+        )
         self.include_reasoning_effort = include_reasoning_effort
         self.enable_thinking = enable_thinking
         self.extra_body = dict(extra_body or {})
@@ -57,14 +88,51 @@ class OpenAICompatibleProvider:
             kwargs["extra_body"] = extra_body
         if request.tools:
             kwargs["tools"] = request.tools
-        stream = self.client.chat.completions.create(**kwargs)
+        for attempt in range(self.stream_max_retries + 1):
+            stream = None
+            try:
+                stream = self._create_stream(kwargs)
+                return self._consume_stream(stream, request)
+            except _StreamTransportError as error:
+                failure_type = type(error.__cause__).__name__
+                if attempt == self.stream_max_retries:
+                    logger.error("[模型流传输失败] %s：已用完 %s 次重试，当前调用失败", failure_type, self.stream_max_retries)
+                    raise error.__cause__ from None
+            finally:
+                close = getattr(stream, "close", None)
+                if close is not None:
+                    try:
+                        close()
+                    except Exception as error:
+                        logger.warning("[模型流关闭失败] %s", type(error).__name__)
+            delay = min(2 ** (attempt + 1), 30)
+            logger.warning(
+                "[模型流传输失败] %s：%s 秒后重试当前调用（%s/%s）；丢弃本次未完成的文本和工具参数",
+                failure_type, delay, attempt + 1, self.stream_max_retries,
+            )
+            time.sleep(delay)
+
+        raise AssertionError("unreachable")
+
+    def _create_stream(self, kwargs):
+        try:
+            return self.client.chat.completions.create(**kwargs)
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.RemoteProtocolError,
+                APIConnectionError, TimeoutError, ConnectionError) as error:
+            raise _StreamTransportError() from error
+        except APIStatusError as error:
+            if error.status_code in {408, 409, 429} or error.status_code >= 500:
+                raise _StreamTransportError() from error
+            raise
+
+    def _consume_stream(self, stream, request: ModelRequest) -> ModelResponse:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         calls_by_index: dict[int, dict[str, str]] = {}
         finish_reason = "stop"
         usage = None
 
-        for chunk in stream:
+        for chunk in _stream_chunks(stream):
             chunk_usage = getattr(chunk, "usage", None)
             if chunk_usage is not None:
                 usage = chunk_usage
@@ -134,6 +202,7 @@ def get_provider() -> ChatProvider:
             base_url=LLM_BASE_URL,
             include_reasoning_effort=LLM_INCLUDE_REASONING_EFFORT,
             enable_thinking=LLM_ENABLE_THINKING,
+            stream_max_retries=LLM_STREAM_MAX_RETRIES,
         )
     return _provider
 

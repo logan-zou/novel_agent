@@ -6,7 +6,7 @@
 
 ## 工具
 
-- `search_entities`：按名称、别名和摘要找候选，不构成回答证据。
+- `search_entities`：按名称、别名和摘要找候选，精确名称和别名优先，不构成回答证据。默认前 30 项是整次查询的总量；查看 `keyword_matches` 和 `uncovered_keywords`，仅对未覆盖的词缩小查询，避免把被截断的已有实体误判为不存在。
 - `read_entity`：读取角色、设定、事件或故事弧，返回本次问答的证据 ID。
 - `search_source`：检索章节原文，支持范围、倒序和分页，每个命中有证据 ID。
 - `read_chapter`：当搜索片段上下文不足时读取完整章节。
