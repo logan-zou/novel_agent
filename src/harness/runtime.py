@@ -255,7 +255,13 @@ class AgentRuntime:
                 repeated_tool_calls=repeated_tool_calls,
             )
 
-        def finish_or_repair(output: str, step: int, *, tool_completion: bool = False) -> RunResult | None:
+        def finish_or_repair(
+            output: str,
+            step: int,
+            assistant_message: AssistantMessage,
+            *,
+            tool_completion: bool = False,
+        ) -> RunResult | None:
             nonlocal validation_retries, repair_output, last_validation_error
             nonlocal repair_tool_failed, repair_response_incomplete, iteration_deadline, accumulated_text
             nonlocal validation_deadline
@@ -280,16 +286,16 @@ class AgentRuntime:
                         "run_id": run_id, "step": step, "iteration_deadline": iteration_deadline,
                         "repair_iterations": repair_budget,
                     })
-                messages.extend([
-                    {"role": "assistant", "content": output},
-                    {
-                        "role": "user",
-                        "content": (
-                            "上一版最终输出未通过校验：\n"
-                            f"{validation_error}\n请修正后重新输出完整结果。"
-                        ),
-                    },
-                ])
+                # 工具完成声明已随工具轮次入历史；普通输出保留原始思考和续写片段。
+                if not tool_completion:
+                    messages.append(_assistant_dict(assistant_message))
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "上一版最终输出未通过校验：\n"
+                        f"{validation_error}\n请修正后重新输出完整结果。"
+                    ),
+                })
                 accumulated_text = ""
                 return None
             data = {"run_id": run_id, "step": step}
@@ -644,7 +650,7 @@ class AgentRuntime:
                         grant_continuation(continuation, step)
                         continue
                     if not round_failed and requested is not None:
-                        result = finish_or_repair(requested, step, tool_completion=True)
+                        result = finish_or_repair(requested, step, message, tool_completion=True)
                         if result is not None:
                             return result
                         continue
@@ -716,7 +722,7 @@ class AgentRuntime:
                         partial = message.content or ""
                         accumulated_text += partial
                         if partial:
-                            messages.append({"role": "assistant", "content": partial})
+                            messages.append(_assistant_dict(message))
                         messages.append({"role": "user", "content": "请从截断处继续输出。"})
                     requested, continuation = take_requests()
                     reject_completion(requested, step, "模型响应被截断，本轮不能确认完成")
@@ -725,7 +731,7 @@ class AgentRuntime:
                     continue
 
                 output = accumulated_text + (message.content or "")
-                result = finish_or_repair(output, step)
+                result = finish_or_repair(output, step, message)
                 if result is not None:
                     return result
 

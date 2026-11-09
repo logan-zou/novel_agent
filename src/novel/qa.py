@@ -31,7 +31,9 @@ def run_qa_agent(
     on_event: Callable[[dict], None] | None = None,
     provider: ChatProvider | None = None,
     model: str | None = None,
+    usage_recorder: Callable[[dict], None] | None = None,
 ) -> dict:
+    """运行证据问答；服务调用方可注入记录器，将用量写入独立状态存储。"""
     selected_model = require_llm_model(model or QA_MODEL, "QA_MODEL")
     corpus = CorpusStore(base_dir)
     knowledge = KnowledgeStore(base_dir)
@@ -110,7 +112,11 @@ def run_qa_agent(
             input_messages,
             qa_tools(knowledge, corpus, evidence),
             on_event=forward,
-            usage_recorder=lambda usage: record_usage(novel_id, "qa", label, selected_model, usage),
+            usage_recorder=(
+                usage_recorder
+                if usage_recorder is not None
+                else lambda usage: record_usage(novel_id, "qa", label, selected_model, usage)
+            ),
             output_validator=evidence.validator,
         )
         reply = result.output

@@ -16,6 +16,7 @@ def run_qa_agent(
     on_event: Callable[[dict], None] | None = None,
     provider: ChatProvider | None = None,
     model: str | None = None,
+    usage_recorder: Callable[[dict], None] | None = None,
 ) -> dict:
     base_dir = str(Path(KNOWLEDGE_BASE_DIR) / novel_id)
     return _run(
@@ -26,6 +27,7 @@ def run_qa_agent(
         on_event=on_event,
         provider=provider,
         model=model,
+        usage_recorder=usage_recorder,
     )
 
 

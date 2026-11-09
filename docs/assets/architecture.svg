@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="title description">
+  <title id="title">Novel Agent：小说领域与通用 Harness 架构</title>
+  <desc id="description">CLI 与 Python 调用方进入小说领域。Builder 读写 Corpus 和 Knowledge Store；QA 读取知识并检索原文，由 Evidence 收集与校验引用。领域以 AgentConfig、Tool 和校验、进展回调配置 Harness；Harness 调用模型并回调领域工具。模型 SDK 接入在 src/llm.py 中，事件和用量通过回调交给调用方。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b98aa"/>
+    </marker>
+    <marker id="teal-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#328b82"/>
+    </marker>
+    <marker id="purple-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8971b9"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; fill: #263345; }
+      .eyebrow { font-size: 14px; font-weight: 700; letter-spacing: 2px; fill: #6b7b8d; }
+      .heading { font-size: 30px; font-weight: 700; }
+      .subtitle { font-size: 18px; fill: #64748b; }
+      .section { font-size: 25px; font-weight: 700; }
+      .card-title { font-size: 23px; font-weight: 650; }
+      .body { font-size: 19px; }
+      .path { font-size: 16px; fill: #62758a; }
+      .label { font-size: 16px; fill: #6a7b8f; }
+      .teal { fill: #23766f; }
+      .purple { fill: #70549d; }
+      .line { fill: none; stroke: #8b98aa; stroke-width: 2; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="900" rx="24" fill="#fbfcfe"/>
+  <text x="48" y="35" class="eyebrow">NOVEL AGENT / ARCHITECTURE</text>
+  <text x="48" y="78" class="heading">领域决定策略，Harness 承接执行</text>
+  <text x="48" y="108" class="subtitle">一套运行机制，支撑知识构建与证据问答</text>
+
+  <rect x="48" y="136" width="1104" height="56" rx="12" fill="#eef2f7" stroke="#dbe3ed"/>
+  <text x="72" y="171" class="card-title">CLI / Python 调用方</text>
+  <text x="650" y="170" class="subtitle">build · ask · evaluate · 自定义服务集成</text>
+  <path d="M600 192 V218" class="line" marker-end="url(#arrow)"/>
+
+  <rect x="48" y="224" width="1104" height="272" rx="16" fill="#edf8f5" stroke="#b9ddd5" stroke-width="1.5"/>
+  <text x="72" y="259" class="section teal">小说业务领域</text>
+  <text x="256" y="258" class="path">src/novel/</text>
+  <text x="930" y="257" class="eyebrow teal">NOVEL DOMAIN</text>
+
+  <rect x="72" y="281" width="306" height="175" rx="12" fill="#ffffff" stroke="#c9e4de"/>
+  <text x="92" y="317" class="card-title">知识构建 · Builder</text>
+  <text x="92" y="343" class="path">build.py → novel/builder.py</text>
+  <text x="92" y="377" class="body">渐进批次 · 实体暂存</text>
+  <text x="92" y="407" class="body">结构化修复 · 校验提交</text>
+  <text x="92" y="437" class="body">实际写入与修复衡量进展</text>
+
+  <rect x="447" y="281" width="306" height="175" rx="12" fill="#ffffff" stroke="#c9e4de"/>
+  <text x="467" y="317" class="card-title">双层记忆 · Stores</text>
+  <text x="467" y="343" class="path">corpus.py + knowledge.py</text>
+  <text x="467" y="377" class="body">Corpus：完整章节原文</text>
+  <text x="467" y="407" class="body">Knowledge：实体 Markdown</text>
+  <text x="467" y="437" class="body">Catalog：名称 / 别名 / 摘要</text>
+
+  <rect x="822" y="281" width="306" height="175" rx="12" fill="#ffffff" stroke="#c9e4de"/>
+  <text x="842" y="317" class="card-title">证据问答 · QA</text>
+  <text x="842" y="343" class="path">qa.py + retrieval.py + evidence.py</text>
+  <text x="842" y="377" class="body">实体定位 → 原文核验</text>
+  <text x="842" y="407" class="body">Evidence ID → 内联引用</text>
+  <text x="842" y="437" class="body">权威判断 · 时间与主体边界</text>
+
+  <path d="M382 386 H442" fill="none" stroke="#328b82" stroke-width="2" marker-start="url(#teal-arrow)" marker-end="url(#teal-arrow)"/>
+  <text x="394" y="373" class="label teal">读写</text>
+  <path d="M817 386 H758" fill="none" stroke="#328b82" stroke-width="2" marker-end="url(#teal-arrow)"/>
+  <text x="773" y="373" class="label teal">只读</text>
+  <text x="600" y="482" text-anchor="middle" class="label teal">原文作事实依据，知识库作可修订索引</text>
+
+  <path d="M580 501 V546" fill="none" stroke="#8971b9" stroke-width="2" marker-end="url(#purple-arrow)"/>
+  <path d="M620 546 V501" fill="none" stroke="#8971b9" stroke-width="2" marker-end="url(#purple-arrow)"/>
+  <text x="72" y="529" class="label purple">配置注入 ↓ 领域工具回调 ↑</text>
+  <text x="650" y="529" class="label purple">AgentConfig · Tool[] · 校验 / 进展回调</text>
+
+  <rect x="48" y="552" width="1104" height="143" rx="16" fill="#f3effa" stroke="#d9cdea" stroke-width="1.5"/>
+  <text x="72" y="592" class="section purple">通用执行 · Harness</text>
+  <text x="350" y="590" class="path">src/harness/runtime.py + usage.py</text>
+  <text x="954" y="590" class="eyebrow purple">RUNTIME</text>
+  <rect x="72" y="614" width="246" height="52" rx="10" fill="#ffffff" stroke="#e3dbee"/>
+  <rect x="342" y="614" width="246" height="52" rx="10" fill="#ffffff" stroke="#e3dbee"/>
+  <rect x="612" y="614" width="246" height="52" rx="10" fill="#ffffff" stroke="#e3dbee"/>
+  <rect x="882" y="614" width="246" height="52" rx="10" fill="#ffffff" stroke="#e3dbee"/>
+  <text x="195" y="647" text-anchor="middle" class="body">模型 / 工具循环</text>
+  <text x="465" y="647" text-anchor="middle" class="body">预算 / 停滞检测</text>
+  <text x="735" y="647" text-anchor="middle" class="body">截断 / 校验恢复</text>
+  <text x="1005" y="647" text-anchor="middle" class="body">上下文 / 用量</text>
+
+  <path d="M380 701 V747" class="line" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="402" y="731" class="label">ModelRequest / ModelResponse</text>
+  <path d="M967 701 V747" class="line" marker-end="url(#arrow)"/>
+  <text x="989" y="731" class="label">callbacks</text>
+
+  <rect x="48" y="753" width="699" height="82" rx="12" fill="#ffffff" stroke="#dbe3ed"/>
+  <text x="72" y="787" class="card-title">模型接入 · src/llm.py</text>
+  <text x="72" y="815" class="subtitle">OpenAI-compatible Chat Completions API</text>
+  <rect x="781" y="753" width="371" height="82" rx="12" fill="#ffffff" stroke="#dbe3ed"/>
+  <text x="805" y="787" class="card-title">调用方集成</text>
+  <text x="805" y="815" class="subtitle">events · usage_recorder</text>
+
+  <text x="48" y="875" class="label">依赖边界由 tests/test_architecture_boundaries.py 持续检查</text>
+</svg>
